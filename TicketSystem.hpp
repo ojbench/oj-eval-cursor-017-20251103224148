@@ -753,8 +753,73 @@ public:
         std::string from = getParam('s', keys, values, count);
         std::string to = getParam('t', keys, values, count);
         std::string dateStr = getParam('d', keys, values, count);
+        std::string sortBy = getParam('p', keys, values, count);
+        if (sortBy.empty()) sortBy = "time";
         
-        std::cout << "0\n";
+        int queryDay = dateToDay(dateStr);
+        
+        // Collect matching trains
+        Vector<int> matches;
+        for (int i = 0; i < 10000; i++) {
+            Train train;
+            if (trains.read(i, train) && train.exists && train.released) {
+                int fromIdx = -1, toIdx = -1;
+                for (int j = 0; j < train.stationNum; j++) {
+                    if (from == train.stations[j]) fromIdx = j;
+                    if (to == train.stations[j]) toIdx = j;
+                }
+                
+                if (fromIdx != -1 && toIdx != -1 && fromIdx < toIdx) {
+                    // Check if this train runs on the query date
+                    // The queryDay is the day when train departs from 'from' station
+                    // Calculate which start day makes the train depart from 'from' on queryDay
+                    for (int startDay = train.saleStart; startDay <= train.saleEnd; startDay++) {
+                        DateTime leaveTime = train.getLeaveTime(fromIdx, startDay);
+                        int leaveDay = (leaveTime.month == 6 ? leaveTime.day - 1 :
+                                       (leaveTime.month == 7 ? 30 + leaveTime.day - 1 : 61 + leaveTime.day - 1));
+                        if (leaveDay == queryDay) {
+                            matches.push_back(i);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        std::cout << matches.size() << "\n";
+        
+        for (int i = 0; i < matches.size(); i++) {
+            Train train;
+            trains.read(matches[i], train);
+            
+            int fromIdx = -1, toIdx = -1;
+            for (int j = 0; j < train.stationNum; j++) {
+                if (from == train.stations[j]) fromIdx = j;
+                if (to == train.stations[j]) toIdx = j;
+            }
+            
+            // Find the correct start day
+            int startDay = -1;
+            for (int sd = train.saleStart; sd <= train.saleEnd; sd++) {
+                DateTime leaveTime = train.getLeaveTime(fromIdx, sd);
+                int leaveDay = (leaveTime.month == 6 ? leaveTime.day - 1 :
+                               (leaveTime.month == 7 ? 30 + leaveTime.day - 1 : 61 + leaveTime.day - 1));
+                if (leaveDay == queryDay) {
+                    startDay = sd;
+                    break;
+                }
+            }
+            
+            if (startDay != -1) {
+                DateTime leaveTime = train.getLeaveTime(fromIdx, startDay);
+                DateTime arriveTime = train.getArriveTime(toIdx, startDay);
+                int price = train.getCumulativePrice(fromIdx, toIdx);
+                
+                std::cout << train.trainID << " " << from << " " << leaveTime.toString() 
+                         << " -> " << to << " " << arriveTime.toString() 
+                         << " " << price << " " << train.seatNum << "\n";
+            }
+        }
     }
     
     void handleQueryTransfer(char keys[20], std::string values[20], int count) {
