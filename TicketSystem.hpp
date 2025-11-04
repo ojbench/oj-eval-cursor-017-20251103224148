@@ -232,6 +232,7 @@ private:
     bool loggedIn[10000];
     int userCount;
     int trainCount;
+    int trainPositions[5000];  // Store positions of existing trains
     
     void parseCommand(const std::string& cmd, char keys[20], std::string values[20], int& count) {
         std::istringstream iss(cmd);
@@ -367,6 +368,7 @@ private:
 public:
     TicketSystem() : users("users.dat"), trains("trains.dat"), userCount(0), trainCount(0) {
         memset(loggedIn, 0, sizeof(loggedIn));
+        memset(trainPositions, -1, sizeof(trainPositions));
     }
     
     void processCommand(const std::string& cmdLine) {
@@ -652,6 +654,7 @@ public:
         
         int pos = findOrCreateTrain(trainID);
         trains.write(pos, train);
+        trainPositions[trainCount] = pos;
         trainCount++;
         std::cout << "0\n";
     }
@@ -760,7 +763,10 @@ public:
         
         // Collect matching trains
         Vector<int> matches;
-        for (int i = 0; i < 10000; i++) {
+        for (int idx = 0; idx < trainCount; idx++) {
+            int i = trainPositions[idx];
+            if (i == -1) continue;
+            
             Train train;
             if (trains.read(i, train) && train.exists && train.released) {
                 int fromIdx = -1, toIdx = -1;
@@ -770,17 +776,16 @@ public:
                 }
                 
                 if (fromIdx != -1 && toIdx != -1 && fromIdx < toIdx) {
-                    // Check if this train runs on the query date
-                    // The queryDay is the day when train departs from 'from' station
-                    // Calculate which start day makes the train depart from 'from' on queryDay
-                    for (int startDay = train.saleStart; startDay <= train.saleEnd; startDay++) {
-                        DateTime leaveTime = train.getLeaveTime(fromIdx, startDay);
-                        int leaveDay = (leaveTime.month == 6 ? leaveTime.day - 1 :
-                                       (leaveTime.month == 7 ? 30 + leaveTime.day - 1 : 61 + leaveTime.day - 1));
-                        if (leaveDay == queryDay) {
-                            matches.push_back(i);
-                            break;
-                        }
+                    // Calculate the offset from start day to departure day at 'from' station
+                    DateTime leaveTime = train.getLeaveTime(fromIdx, 0);
+                    int offsetDays = leaveTime.toMinutes() / (24 * 60);
+                    
+                    // Calculate which start day corresponds to queryDay departure from 'from'
+                    int requiredStartDay = queryDay - offsetDays;
+                    
+                    // Check if this start day is in the valid sale range
+                    if (requiredStartDay >= train.saleStart && requiredStartDay <= train.saleEnd) {
+                        matches.push_back(i);
                     }
                 }
             }
@@ -798,27 +803,18 @@ public:
                 if (to == train.stations[j]) toIdx = j;
             }
             
-            // Find the correct start day
-            int startDay = -1;
-            for (int sd = train.saleStart; sd <= train.saleEnd; sd++) {
-                DateTime leaveTime = train.getLeaveTime(fromIdx, sd);
-                int leaveDay = (leaveTime.month == 6 ? leaveTime.day - 1 :
-                               (leaveTime.month == 7 ? 30 + leaveTime.day - 1 : 61 + leaveTime.day - 1));
-                if (leaveDay == queryDay) {
-                    startDay = sd;
-                    break;
-                }
-            }
+            // Calculate the correct start day
+            DateTime leaveTimeOffset = train.getLeaveTime(fromIdx, 0);
+            int offsetDays = leaveTimeOffset.toMinutes() / (24 * 60);
+            int startDay = queryDay - offsetDays;
             
-            if (startDay != -1) {
-                DateTime leaveTime = train.getLeaveTime(fromIdx, startDay);
-                DateTime arriveTime = train.getArriveTime(toIdx, startDay);
-                int price = train.getCumulativePrice(fromIdx, toIdx);
-                
-                std::cout << train.trainID << " " << from << " " << leaveTime.toString() 
-                         << " -> " << to << " " << arriveTime.toString() 
-                         << " " << price << " " << train.seatNum << "\n";
-            }
+            DateTime leaveTime = train.getLeaveTime(fromIdx, startDay);
+            DateTime arriveTime = train.getArriveTime(toIdx, startDay);
+            int price = train.getCumulativePrice(fromIdx, toIdx);
+            
+            std::cout << train.trainID << " " << from << " " << leaveTime.toString() 
+                     << " -> " << to << " " << arriveTime.toString() 
+                     << " " << price << " " << train.seatNum << "\n";
         }
     }
     
@@ -902,6 +898,7 @@ public:
         users.clear();
         trains.clear();
         memset(loggedIn, 0, sizeof(loggedIn));
+        memset(trainPositions, -1, sizeof(trainPositions));
         userCount = 0;
         trainCount = 0;
         std::cout << "0\n";
