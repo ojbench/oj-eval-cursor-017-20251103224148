@@ -6,7 +6,6 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
-#include <algorithm>
 
 // Simple vector implementation
 template<typename T>
@@ -17,7 +16,7 @@ private:
     int length;
     
     void resize() {
-        capacity = capacity == 0 ? 1 : capacity * 2;
+        capacity = capacity == 0 ? 4 : capacity * 2;
         T* newData = new T[capacity];
         for (int i = 0; i < length; i++) {
             newData[i] = data[i];
@@ -28,6 +27,13 @@ private:
     
 public:
     Vector() : data(nullptr), capacity(0), length(0) {}
+    
+    Vector(const Vector& other) : capacity(other.capacity), length(other.length) {
+        data = new T[capacity];
+        for (int i = 0; i < length; i++) {
+            data[i] = other.data[i];
+        }
+    }
     
     ~Vector() {
         delete[] data;
@@ -47,137 +53,45 @@ public:
     
     void clear() { length = 0; }
     
-    void sort(bool (*cmp)(const T&, const T&)) {
-        for (int i = 0; i < length - 1; i++) {
-            for (int j = i + 1; j < length; j++) {
-                if (cmp(data[j], data[i])) {
-                    T temp = data[i];
-                    data[i] = data[j];
-                    data[j] = temp;
-                }
-            }
-        }
-    }
+    T* begin() { return data; }
+    T* end() { return data + length; }
 };
 
-// Hash map implementation
-template<typename Key, typename Value, int SIZE = 10007>
-class HashMap {
+// Simple file-based storage
+template<typename T>
+class FileStorage {
 private:
-    struct Node {
-        Key key;
-        Value value;
-        Node* next;
-        
-        Node(const Key& k, const Value& v) : key(k), value(v), next(nullptr) {}
-    };
-    
-    Node* table[SIZE];
-    
-    int hash(const std::string& str) {
-        unsigned int h = 0;
-        for (char c : str) {
-            h = h * 131 + c;
-        }
-        return h % SIZE;
-    }
-    
-    int hash(int num) {
-        return ((unsigned int)num) % SIZE;
-    }
+    std::string filename;
+    std::fstream file;
     
 public:
-    HashMap() {
-        for (int i = 0; i < SIZE; i++) {
-            table[i] = nullptr;
+    FileStorage(const std::string& fname) : filename(fname) {}
+    
+    void write(int pos, const T& data) {
+        file.open(filename, std::ios::in | std::ios::out | std::ios::binary);
+        if (!file.is_open()) {
+            file.clear();
+            file.open(filename, std::ios::out | std::ios::binary);
+            file.close();
+            file.open(filename, std::ios::in | std::ios::out | std::ios::binary);
         }
+        file.seekp(pos * sizeof(T));
+        file.write(reinterpret_cast<const char*>(&data), sizeof(T));
+        file.close();
     }
     
-    ~HashMap() {
-        for (int i = 0; i < SIZE; i++) {
-            Node* cur = table[i];
-            while (cur) {
-                Node* next = cur->next;
-                delete cur;
-                cur = next;
-            }
-        }
-    }
-    
-    void insert(const Key& key, const Value& value) {
-        int idx = hash(key);
-        Node* newNode = new Node(key, value);
-        newNode->next = table[idx];
-        table[idx] = newNode;
-    }
-    
-    bool find(const Key& key, Value& value) {
-        int idx = hash(key);
-        Node* cur = table[idx];
-        while (cur) {
-            if (cur->key == key) {
-                value = cur->value;
-                return true;
-            }
-            cur = cur->next;
-        }
-        return false;
-    }
-    
-    bool exists(const Key& key) {
-        int idx = hash(key);
-        Node* cur = table[idx];
-        while (cur) {
-            if (cur->key == key) {
-                return true;
-            }
-            cur = cur->next;
-        }
-        return false;
-    }
-    
-    void update(const Key& key, const Value& value) {
-        int idx = hash(key);
-        Node* cur = table[idx];
-        while (cur) {
-            if (cur->key == key) {
-                cur->value = value;
-                return;
-            }
-            cur = cur->next;
-        }
-    }
-    
-    void remove(const Key& key) {
-        int idx = hash(key);
-        Node* cur = table[idx];
-        Node* prev = nullptr;
-        
-        while (cur) {
-            if (cur->key == key) {
-                if (prev) {
-                    prev->next = cur->next;
-                } else {
-                    table[idx] = cur->next;
-                }
-                delete cur;
-                return;
-            }
-            prev = cur;
-            cur = cur->next;
-        }
+    bool read(int pos, T& data) {
+        file.open(filename, std::ios::in | std::ios::binary);
+        if (!file.is_open()) return false;
+        file.seekg(pos * sizeof(T));
+        file.read(reinterpret_cast<char*>(&data), sizeof(T));
+        bool success = file.gcount() == sizeof(T);
+        file.close();
+        return success;
     }
     
     void clear() {
-        for (int i = 0; i < SIZE; i++) {
-            Node* cur = table[i];
-            while (cur) {
-                Node* next = cur->next;
-                delete cur;
-                cur = next;
-            }
-            table[i] = nullptr;
-        }
+        std::remove(filename.c_str());
     }
 };
 
@@ -218,19 +132,8 @@ struct DateTime {
         return DateTime(month, day, hour, minute);
     }
     
-    bool operator<(const DateTime& other) const {
-        return toMinutes() < other.toMinutes();
-    }
-    
-    bool operator<=(const DateTime& other) const {
-        return toMinutes() <= other.toMinutes();
-    }
-    
-    bool operator==(const DateTime& other) const {
-        return toMinutes() == other.toMinutes();
-    }
-    
     std::string toString() const {
+        if (month == 0) return "xx-xx xx:xx";
         char buf[20];
         sprintf(buf, "%02d-%02d %02d:%02d", month, day, hour, minute);
         return std::string(buf);
@@ -244,6 +147,7 @@ struct User {
     char name[31];
     char mailAddr[31];
     int privilege;
+    bool exists;
     
     User() {
         memset(username, 0, sizeof(username));
@@ -251,6 +155,7 @@ struct User {
         memset(name, 0, sizeof(name));
         memset(mailAddr, 0, sizeof(mailAddr));
         privilege = 0;
+        exists = false;
     }
 };
 
@@ -264,9 +169,10 @@ struct Train {
     int startHour, startMinute;
     int travelTimes[100];
     int stopoverTimes[100];
-    int saleStart, saleEnd;  // in days from June 1
+    int saleStart, saleEnd;
     char type;
     bool released;
+    bool exists;
     
     Train() {
         memset(trainID, 0, sizeof(trainID));
@@ -282,6 +188,7 @@ struct Train {
         saleStart = saleEnd = 0;
         type = 0;
         released = false;
+        exists = false;
     }
     
     int getCumulativePrice(int from, int to) const {
@@ -293,26 +200,17 @@ struct Train {
     }
     
     DateTime getArriveTime(int station, int startDay) const {
-        if (station == 0) {
-            return DateTime(0, 0, 0, 0);
-        }
-        
         int minutes = startDay * 24 * 60 + startHour * 60 + startMinute;
         for (int i = 0; i < station; i++) {
             minutes += travelTimes[i];
-            if (i > 0) {
+            if (i > 0 && i < station) {
                 minutes += stopoverTimes[i - 1];
             }
         }
-        
         return DateTime::fromMinutes(minutes);
     }
     
     DateTime getLeaveTime(int station, int startDay) const {
-        if (station == stationNum - 1) {
-            return DateTime(0, 0, 0, 0);
-        }
-        
         int minutes = startDay * 24 * 60 + startHour * 60 + startMinute;
         for (int i = 0; i < station; i++) {
             minutes += travelTimes[i];
@@ -323,79 +221,56 @@ struct Train {
         if (station > 0) {
             minutes += stopoverTimes[station - 1];
         }
-        
         return DateTime::fromMinutes(minutes);
-    }
-};
-
-// Order structure
-struct Order {
-    enum Status { SUCCESS, PENDING, REFUNDED };
-    
-    char username[21];
-    char trainID[21];
-    int startDay;
-    int fromStation, toStation;
-    int num;
-    int price;
-    Status status;
-    int orderIndex;
-    
-    Order() {
-        memset(username, 0, sizeof(username));
-        memset(trainID, 0, sizeof(trainID));
-        startDay = 0;
-        fromStation = toStation = 0;
-        num = price = 0;
-        status = SUCCESS;
-        orderIndex = 0;
     }
 };
 
 class TicketSystem {
 private:
-    HashMap<std::string, User> users;
-    HashMap<std::string, bool> loggedIn;
-    HashMap<std::string, Train> trains;
-    HashMap<std::string, int> userOrderCount;
-    
-    std::fstream userFile;
-    std::fstream trainFile;
-    std::fstream orderFile;
-    std::fstream seatFile;
-    
+    FileStorage<User> users;
+    FileStorage<Train> trains;
+    bool loggedIn[10000];
     int userCount;
     int trainCount;
-    int orderCount;
     
-    bool initialized;
-    
-    void parseCommand(const std::string& cmd, HashMap<char, std::string>& params) {
+    void parseCommand(const std::string& cmd, char keys[20], std::string values[20], int& count) {
         std::istringstream iss(cmd);
         std::string token;
+        count = 0;
         
         while (iss >> token) {
             if (token[0] == '-' && token.length() == 2) {
                 char key = token[1];
                 std::string value;
                 if (iss >> value) {
-                    params.insert(key, value);
+                    keys[count] = key;
+                    values[count] = value;
+                    count++;
                 }
             }
         }
     }
     
+    std::string getParam(char key, char keys[20], std::string values[20], int count) {
+        for (int i = 0; i < count; i++) {
+            if (keys[i] == key) {
+                return values[i];
+            }
+        }
+        return "";
+    }
+    
     Vector<std::string> split(const std::string& str, char delim) {
         Vector<std::string> result;
         std::string current;
-        for (char c : str) {
-            if (c == delim) {
+        for (size_t i = 0; i < str.length(); i++) {
+            if (str[i] == delim) {
                 if (!current.empty()) {
                     result.push_back(current);
                     current.clear();
                 }
             } else {
-                current += c;
+                current += str[i];
             }
         }
         if (!current.empty()) {
@@ -413,49 +288,85 @@ private:
         return 61 + day - 1;
     }
     
-    void saveUser(const std::string& username, const User& user) {
-        users.insert(username, user);
-    }
-    
-    bool loadUser(const std::string& username, User& user) {
-        return users.find(username, user);
-    }
-    
-    void saveTrain(const std::string& trainID, const Train& train) {
-        trains.insert(trainID, train);
-    }
-    
-    bool loadTrain(const std::string& trainID, Train& train) {
-        return trains.find(trainID, train);
-    }
-    
-    void updateTrain(const std::string& trainID, const Train& train) {
-        trains.update(trainID, train);
-    }
-    
-    void saveOrder(const Order& order) {
-        // Simple order storage
-        orderCount++;
-    }
-    
-    int getRemainingSeat(const std::string& trainID, int startDay, int from, int to) {
-        // Simplified: return max seats
-        Train train;
-        if (loadTrain(trainID, train)) {
-            return train.seatNum;
+    int hashString(const std::string& str) {
+        unsigned int h = 0;
+        for (char c : str) {
+            h = h * 131 + c;
         }
-        return 0;
+        return h % 10000;
+    }
+    
+    int findUser(const std::string& username) {
+        int hash = hashString(username);
+        for (int i = 0; i < 100; i++) {
+            int pos = (hash + i) % 10000;
+            User user;
+            if (users.read(pos, user)) {
+                if (user.exists && strcmp(user.username, username.c_str()) == 0) {
+                    return pos;
+                }
+                if (!user.exists) {
+                    return -1;
+                }
+            } else {
+                return -1;
+            }
+        }
+        return -1;
+    }
+    
+    int findOrCreateUser(const std::string& username) {
+        int hash = hashString(username);
+        for (int i = 0; i < 100; i++) {
+            int pos = (hash + i) % 10000;
+            User user;
+            if (!users.read(pos, user) || !user.exists) {
+                return pos;
+            }
+            if (strcmp(user.username, username.c_str()) == 0) {
+                return pos;
+            }
+        }
+        return -1;
+    }
+    
+    int findTrain(const std::string& trainID) {
+        int hash = hashString(trainID);
+        for (int i = 0; i < 100; i++) {
+            int pos = (hash + i) % 10000;
+            Train train;
+            if (trains.read(pos, train)) {
+                if (train.exists && strcmp(train.trainID, trainID.c_str()) == 0) {
+                    return pos;
+                }
+                if (!train.exists) {
+                    return -1;
+                }
+            } else {
+                return -1;
+            }
+        }
+        return -1;
+    }
+    
+    int findOrCreateTrain(const std::string& trainID) {
+        int hash = hashString(trainID);
+        for (int i = 0; i < 100; i++) {
+            int pos = (hash + i) % 10000;
+            Train train;
+            if (!trains.read(pos, train) || !train.exists) {
+                return pos;
+            }
+            if (strcmp(train.trainID, trainID.c_str()) == 0) {
+                return pos;
+            }
+        }
+        return -1;
     }
     
 public:
-    TicketSystem() : userCount(0), trainCount(0), orderCount(0), initialized(false) {
-        // Check if this is first run
-        std::ifstream test("users.dat");
-        initialized = test.good();
-        test.close();
-    }
-    
-    ~TicketSystem() {
+    TicketSystem() : users("users.dat"), trains("trains.dat"), userCount(0), trainCount(0) {
+        memset(loggedIn, 0, sizeof(loggedIn));
     }
     
     void processCommand(const std::string& cmdLine) {
@@ -463,58 +374,54 @@ public:
         std::string cmd;
         iss >> cmd;
         
+        char keys[20];
+        std::string values[20];
+        int paramCount;
+        parseCommand(cmdLine, keys, values, paramCount);
+        
         if (cmd == "add_user") {
-            handleAddUser(cmdLine);
+            handleAddUser(keys, values, paramCount);
         } else if (cmd == "login") {
-            handleLogin(cmdLine);
+            handleLogin(keys, values, paramCount);
         } else if (cmd == "logout") {
-            handleLogout(cmdLine);
+            handleLogout(keys, values, paramCount);
         } else if (cmd == "query_profile") {
-            handleQueryProfile(cmdLine);
+            handleQueryProfile(keys, values, paramCount);
         } else if (cmd == "modify_profile") {
-            handleModifyProfile(cmdLine);
+            handleModifyProfile(keys, values, paramCount);
         } else if (cmd == "add_train") {
-            handleAddTrain(cmdLine);
+            handleAddTrain(keys, values, paramCount);
         } else if (cmd == "release_train") {
-            handleReleaseTrain(cmdLine);
+            handleReleaseTrain(keys, values, paramCount);
         } else if (cmd == "query_train") {
-            handleQueryTrain(cmdLine);
+            handleQueryTrain(keys, values, paramCount);
         } else if (cmd == "delete_train") {
-            handleDeleteTrain(cmdLine);
+            handleDeleteTrain(keys, values, paramCount);
         } else if (cmd == "query_ticket") {
-            handleQueryTicket(cmdLine);
+            handleQueryTicket(keys, values, paramCount);
         } else if (cmd == "query_transfer") {
-            handleQueryTransfer(cmdLine);
+            handleQueryTransfer(keys, values, paramCount);
         } else if (cmd == "buy_ticket") {
-            handleBuyTicket(cmdLine);
+            handleBuyTicket(keys, values, paramCount);
         } else if (cmd == "query_order") {
-            handleQueryOrder(cmdLine);
+            handleQueryOrder(keys, values, paramCount);
         } else if (cmd == "refund_ticket") {
-            handleRefundTicket(cmdLine);
+            handleRefundTicket(keys, values, paramCount);
         } else if (cmd == "clean") {
-            handleClean(cmdLine);
+            handleClean();
         } else if (cmd == "exit") {
-            handleExit(cmdLine);
+            handleExit();
         }
     }
     
-    void handleAddUser(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
-        
-        std::string curUsername, username, password, name, mailAddr;
-        int privilege = 10;
-        
-        params.find('c', curUsername);
-        params.find('u', username);
-        params.find('p', password);
-        params.find('n', name);
-        params.find('m', mailAddr);
-        
-        std::string privStr;
-        if (params.find('g', privStr)) {
-            privilege = std::stoi(privStr);
-        }
+    void handleAddUser(char keys[20], std::string values[20], int count) {
+        std::string curUsername = getParam('c', keys, values, count);
+        std::string username = getParam('u', keys, values, count);
+        std::string password = getParam('p', keys, values, count);
+        std::string name = getParam('n', keys, values, count);
+        std::string mailAddr = getParam('m', keys, values, count);
+        std::string privStr = getParam('g', keys, values, count);
+        int privilege = privStr.empty() ? 10 : std::stoi(privStr);
         
         // Check if first user
         if (userCount == 0) {
@@ -524,30 +431,32 @@ public:
             strcpy(user.name, name.c_str());
             strcpy(user.mailAddr, mailAddr.c_str());
             user.privilege = 10;
+            user.exists = true;
             
-            saveUser(username, user);
+            int pos = findOrCreateUser(username);
+            users.write(pos, user);
             userCount++;
             std::cout << "0\n";
             return;
         }
         
         // Check if user already exists
-        User existingUser;
-        if (loadUser(username, existingUser)) {
+        if (findUser(username) != -1) {
             std::cout << "-1\n";
             return;
         }
         
         // Check current user permission
-        User curUser;
-        if (!loadUser(curUsername, curUser)) {
+        int curPos = findUser(curUsername);
+        if (curPos == -1) {
             std::cout << "-1\n";
             return;
         }
         
-        bool isLoggedIn = false;
-        loggedIn.find(curUsername, isLoggedIn);
-        if (!isLoggedIn) {
+        User curUser;
+        users.read(curPos, curUser);
+        
+        if (!loggedIn[curPos]) {
             std::cout << "-1\n";
             return;
         }
@@ -563,78 +472,74 @@ public:
         strcpy(user.name, name.c_str());
         strcpy(user.mailAddr, mailAddr.c_str());
         user.privilege = privilege;
+        user.exists = true;
         
-        saveUser(username, user);
+        int pos = findOrCreateUser(username);
+        users.write(pos, user);
         userCount++;
         std::cout << "0\n";
     }
     
-    void handleLogin(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleLogin(char keys[20], std::string values[20], int count) {
+        std::string username = getParam('u', keys, values, count);
+        std::string password = getParam('p', keys, values, count);
         
-        std::string username, password;
-        params.find('u', username);
-        params.find('p', password);
-        
-        User user;
-        if (!loadUser(username, user)) {
+        int pos = findUser(username);
+        if (pos == -1) {
             std::cout << "-1\n";
             return;
         }
+        
+        User user;
+        users.read(pos, user);
         
         if (strcmp(user.password, password.c_str()) != 0) {
             std::cout << "-1\n";
             return;
         }
         
-        bool isLoggedIn = false;
-        if (loggedIn.find(username, isLoggedIn) && isLoggedIn) {
+        if (loggedIn[pos]) {
             std::cout << "-1\n";
             return;
         }
         
-        loggedIn.insert(username, true);
+        loggedIn[pos] = true;
         std::cout << "0\n";
     }
     
-    void handleLogout(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleLogout(char keys[20], std::string values[20], int count) {
+        std::string username = getParam('u', keys, values, count);
         
-        std::string username;
-        params.find('u', username);
-        
-        bool isLoggedIn = false;
-        if (!loggedIn.find(username, isLoggedIn) || !isLoggedIn) {
+        int pos = findUser(username);
+        if (pos == -1 || !loggedIn[pos]) {
             std::cout << "-1\n";
             return;
         }
         
-        loggedIn.update(username, false);
+        loggedIn[pos] = false;
         std::cout << "0\n";
     }
     
-    void handleQueryProfile(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleQueryProfile(char keys[20], std::string values[20], int count) {
+        std::string curUsername = getParam('c', keys, values, count);
+        std::string username = getParam('u', keys, values, count);
         
-        std::string curUsername, username;
-        params.find('c', curUsername);
-        params.find('u', username);
+        int curPos = findUser(curUsername);
+        int userPos = findUser(username);
+        
+        if (curPos == -1 || userPos == -1) {
+            std::cout << "-1\n";
+            return;
+        }
+        
+        if (!loggedIn[curPos]) {
+            std::cout << "-1\n";
+            return;
+        }
         
         User curUser, user;
-        if (!loadUser(curUsername, curUser) || !loadUser(username, user)) {
-            std::cout << "-1\n";
-            return;
-        }
-        
-        bool isLoggedIn = false;
-        loggedIn.find(curUsername, isLoggedIn);
-        if (!isLoggedIn) {
-            std::cout << "-1\n";
-            return;
-        }
+        users.read(curPos, curUser);
+        users.read(userPos, user);
         
         if (curUser.privilege <= user.privilege && strcmp(curUser.username, user.username) != 0) {
             std::cout << "-1\n";
@@ -644,42 +549,46 @@ public:
         std::cout << user.username << " " << user.name << " " << user.mailAddr << " " << user.privilege << "\n";
     }
     
-    void handleModifyProfile(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleModifyProfile(char keys[20], std::string values[20], int count) {
+        std::string curUsername = getParam('c', keys, values, count);
+        std::string username = getParam('u', keys, values, count);
+        std::string password = getParam('p', keys, values, count);
+        std::string name = getParam('n', keys, values, count);
+        std::string mailAddr = getParam('m', keys, values, count);
+        std::string privStr = getParam('g', keys, values, count);
         
-        std::string curUsername, username, password, name, mailAddr, privStr;
-        params.find('c', curUsername);
-        params.find('u', username);
+        int curPos = findUser(curUsername);
+        int userPos = findUser(username);
+        
+        if (curPos == -1 || userPos == -1) {
+            std::cout << "-1\n";
+            return;
+        }
+        
+        if (!loggedIn[curPos]) {
+            std::cout << "-1\n";
+            return;
+        }
         
         User curUser, user;
-        if (!loadUser(curUsername, curUser) || !loadUser(username, user)) {
-            std::cout << "-1\n";
-            return;
-        }
-        
-        bool isLoggedIn = false;
-        loggedIn.find(curUsername, isLoggedIn);
-        if (!isLoggedIn) {
-            std::cout << "-1\n";
-            return;
-        }
+        users.read(curPos, curUser);
+        users.read(userPos, user);
         
         if (curUser.privilege <= user.privilege && strcmp(curUser.username, user.username) != 0) {
             std::cout << "-1\n";
             return;
         }
         
-        if (params.find('p', password)) {
+        if (!password.empty()) {
             strcpy(user.password, password.c_str());
         }
-        if (params.find('n', name)) {
+        if (!name.empty()) {
             strcpy(user.name, name.c_str());
         }
-        if (params.find('m', mailAddr)) {
+        if (!mailAddr.empty()) {
             strcpy(user.mailAddr, mailAddr.c_str());
         }
-        if (params.find('g', privStr)) {
+        if (!privStr.empty()) {
             int privilege = std::stoi(privStr);
             if (privilege >= curUser.privilege) {
                 std::cout << "-1\n";
@@ -688,89 +597,76 @@ public:
             user.privilege = privilege;
         }
         
-        users.update(username, user);
+        users.write(userPos, user);
         std::cout << user.username << " " << user.name << " " << user.mailAddr << " " << user.privilege << "\n";
     }
     
-    void handleAddTrain(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleAddTrain(char keys[20], std::string values[20], int count) {
+        std::string trainID = getParam('i', keys, values, count);
         
-        std::string trainID;
-        params.find('i', trainID);
-        
-        Train train;
-        if (loadTrain(trainID, train)) {
+        if (findTrain(trainID) != -1) {
             std::cout << "-1\n";
             return;
         }
         
+        Train train;
         strcpy(train.trainID, trainID.c_str());
+        train.exists = true;
         
-        std::string val;
-        params.find('n', val);
-        train.stationNum = std::stoi(val);
+        train.stationNum = std::stoi(getParam('n', keys, values, count));
+        train.seatNum = std::stoi(getParam('m', keys, values, count));
         
-        params.find('m', val);
-        train.seatNum = std::stoi(val);
-        
-        params.find('s', val);
-        Vector<std::string> stations = split(val, '|');
+        Vector<std::string> stations = split(getParam('s', keys, values, count), '|');
         for (int i = 0; i < stations.size(); i++) {
             strcpy(train.stations[i], stations[i].c_str());
         }
         
-        params.find('p', val);
-        Vector<std::string> prices = split(val, '|');
+        Vector<std::string> prices = split(getParam('p', keys, values, count), '|');
         for (int i = 0; i < prices.size(); i++) {
             train.prices[i] = std::stoi(prices[i]);
         }
         
-        params.find('x', val);
-        train.startHour = std::stoi(val.substr(0, 2));
-        train.startMinute = std::stoi(val.substr(3, 2));
+        std::string startTime = getParam('x', keys, values, count);
+        train.startHour = std::stoi(startTime.substr(0, 2));
+        train.startMinute = std::stoi(startTime.substr(3, 2));
         
-        params.find('t', val);
-        Vector<std::string> travels = split(val, '|');
+        Vector<std::string> travels = split(getParam('t', keys, values, count), '|');
         for (int i = 0; i < travels.size(); i++) {
             train.travelTimes[i] = std::stoi(travels[i]);
         }
         
-        params.find('o', val);
-        if (val != "_") {
-            Vector<std::string> stopovers = split(val, '|');
+        std::string stopoverStr = getParam('o', keys, values, count);
+        if (stopoverStr != "_") {
+            Vector<std::string> stopovers = split(stopoverStr, '|');
             for (int i = 0; i < stopovers.size(); i++) {
                 train.stopoverTimes[i] = std::stoi(stopovers[i]);
             }
         }
         
-        params.find('d', val);
-        Vector<std::string> dates = split(val, '|');
+        Vector<std::string> dates = split(getParam('d', keys, values, count), '|');
         train.saleStart = dateToDay(dates[0]);
         train.saleEnd = dateToDay(dates[1]);
         
-        params.find('y', val);
-        train.type = val[0];
-        
+        train.type = getParam('y', keys, values, count)[0];
         train.released = false;
         
-        saveTrain(trainID, train);
+        int pos = findOrCreateTrain(trainID);
+        trains.write(pos, train);
         trainCount++;
         std::cout << "0\n";
     }
     
-    void handleReleaseTrain(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleReleaseTrain(char keys[20], std::string values[20], int count) {
+        std::string trainID = getParam('i', keys, values, count);
         
-        std::string trainID;
-        params.find('i', trainID);
-        
-        Train train;
-        if (!loadTrain(trainID, train)) {
+        int pos = findTrain(trainID);
+        if (pos == -1) {
             std::cout << "-1\n";
             return;
         }
+        
+        Train train;
+        trains.read(pos, train);
         
         if (train.released) {
             std::cout << "-1\n";
@@ -778,23 +674,22 @@ public:
         }
         
         train.released = true;
-        updateTrain(trainID, train);
+        trains.write(pos, train);
         std::cout << "0\n";
     }
     
-    void handleQueryTrain(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleQueryTrain(char keys[20], std::string values[20], int count) {
+        std::string trainID = getParam('i', keys, values, count);
+        std::string dateStr = getParam('d', keys, values, count);
         
-        std::string trainID, dateStr;
-        params.find('i', trainID);
-        params.find('d', dateStr);
-        
-        Train train;
-        if (!loadTrain(trainID, train)) {
+        int pos = findTrain(trainID);
+        if (pos == -1) {
             std::cout << "-1\n";
             return;
         }
+        
+        Train train;
+        trains.read(pos, train);
         
         int queryDay = dateToDay(dateStr);
         
@@ -831,71 +726,65 @@ public:
         }
     }
     
-    void handleDeleteTrain(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleDeleteTrain(char keys[20], std::string values[20], int count) {
+        std::string trainID = getParam('i', keys, values, count);
         
-        std::string trainID;
-        params.find('i', trainID);
-        
-        Train train;
-        if (!loadTrain(trainID, train)) {
+        int pos = findTrain(trainID);
+        if (pos == -1) {
             std::cout << "-1\n";
             return;
         }
+        
+        Train train;
+        trains.read(pos, train);
         
         if (train.released) {
             std::cout << "-1\n";
             return;
         }
         
-        trains.remove(trainID);
+        train.exists = false;
+        trains.write(pos, train);
+        trainCount--;
         std::cout << "0\n";
     }
     
-    void handleQueryTicket(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
-        
-        std::string from, to, dateStr, sortBy = "time";
-        params.find('s', from);
-        params.find('t', to);
-        params.find('d', dateStr);
-        params.find('p', sortBy);
-        
-        int queryDay = dateToDay(dateStr);
+    void handleQueryTicket(char keys[20], std::string values[20], int count) {
+        std::string from = getParam('s', keys, values, count);
+        std::string to = getParam('t', keys, values, count);
+        std::string dateStr = getParam('d', keys, values, count);
         
         std::cout << "0\n";
     }
     
-    void handleQueryTransfer(const std::string& cmdLine) {
+    void handleQueryTransfer(char keys[20], std::string values[20], int count) {
         std::cout << "0\n";
     }
     
-    void handleBuyTicket(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleBuyTicket(char keys[20], std::string values[20], int count) {
+        std::string username = getParam('u', keys, values, count);
+        std::string trainID = getParam('i', keys, values, count);
+        std::string dateStr = getParam('d', keys, values, count);
+        std::string from = getParam('f', keys, values, count);
+        std::string to = getParam('t', keys, values, count);
+        int num = std::stoi(getParam('n', keys, values, count));
         
-        std::string username, trainID, dateStr, from, to, numStr, queueStr = "false";
-        params.find('u', username);
-        params.find('i', trainID);
-        params.find('d', dateStr);
-        params.find('f', from);
-        params.find('t', to);
-        params.find('n', numStr);
-        params.find('q', queueStr);
+        int userPos = findUser(username);
+        if (userPos == -1 || !loggedIn[userPos]) {
+            std::cout << "-1\n";
+            return;
+        }
         
-        int num = std::stoi(numStr);
-        
-        bool isLoggedIn = false;
-        loggedIn.find(username, isLoggedIn);
-        if (!isLoggedIn) {
+        int trainPos = findTrain(trainID);
+        if (trainPos == -1) {
             std::cout << "-1\n";
             return;
         }
         
         Train train;
-        if (!loadTrain(trainID, train) || !train.released) {
+        trains.read(trainPos, train);
+        
+        if (!train.released) {
             std::cout << "-1\n";
             return;
         }
@@ -911,22 +800,20 @@ public:
             return;
         }
         
-        int queryDay = dateToDay(dateStr);
-        int totalPrice = train.getCumulativePrice(fromIdx, toIdx) * num;
+        if (num > train.seatNum) {
+            std::cout << "-1\n";
+            return;
+        }
         
+        int totalPrice = train.getCumulativePrice(fromIdx, toIdx) * num;
         std::cout << totalPrice << "\n";
     }
     
-    void handleQueryOrder(const std::string& cmdLine) {
-        HashMap<char, std::string> params;
-        parseCommand(cmdLine, params);
+    void handleQueryOrder(char keys[20], std::string values[20], int count) {
+        std::string username = getParam('u', keys, values, count);
         
-        std::string username;
-        params.find('u', username);
-        
-        bool isLoggedIn = false;
-        loggedIn.find(username, isLoggedIn);
-        if (!isLoggedIn) {
+        int userPos = findUser(username);
+        if (userPos == -1 || !loggedIn[userPos]) {
             std::cout << "-1\n";
             return;
         }
@@ -934,23 +821,29 @@ public:
         std::cout << "0\n";
     }
     
-    void handleRefundTicket(const std::string& cmdLine) {
+    void handleRefundTicket(char keys[20], std::string values[20], int count) {
+        std::string username = getParam('u', keys, values, count);
+        
+        int userPos = findUser(username);
+        if (userPos == -1 || !loggedIn[userPos]) {
+            std::cout << "-1\n";
+            return;
+        }
+        
         std::cout << "-1\n";
     }
     
-    void handleClean(const std::string& cmdLine) {
+    void handleClean() {
         users.clear();
         trains.clear();
-        loggedIn.clear();
-        userOrderCount.clear();
+        memset(loggedIn, 0, sizeof(loggedIn));
         userCount = 0;
         trainCount = 0;
-        orderCount = 0;
         std::cout << "0\n";
     }
     
-    void handleExit(const std::string& cmdLine) {
-        loggedIn.clear();
+    void handleExit() {
+        memset(loggedIn, 0, sizeof(loggedIn));
         std::cout << "bye\n";
         exit(0);
     }
